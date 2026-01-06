@@ -10,8 +10,3 @@ Because i am not a lua programmer, i am very open to any and all suggestions to 
 
 
 just take the ChatFilter folder and place it into your addons folder, itll work right out of the box.
-
-
--- USE WITH CAUTION
-
-this is still a buggy mess right now.
