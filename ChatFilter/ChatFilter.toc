@@ -1,0 +1,8 @@
+## Interface:  11500
+## Title: ChatFilter
+## Notes: Filters unwanted messages from chat channels
+## Author: oldkingcone
+## Version: 1.0.0
+## SavedVariables: ChatFilterDB
+
+ChatFilter.lua
