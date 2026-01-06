@@ -7,3 +7,6 @@ you can access the addon by typing /cf or /chatfilter
 
 
 Because i am not a lua programmer, i am very open to any and all suggestions to make this better. If you find an issue, open an issue, if you have an enhancement, please open a pull request, fuck boosting, fuck boosting spammers.
+
+
+just take the ChatFilter folder and place it into your addons folder, itll work right out of the box.
