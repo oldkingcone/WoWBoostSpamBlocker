@@ -1,4 +1,4 @@
--- ChatFilter:      A simple chat filter addon for WoW Classic
+-- ChatFilter:        A simple chat filter addon for WoW Classic
 -- Filters out unwanted messages from chat channels
 
 local addonName = "ChatFilter"
@@ -8,45 +8,84 @@ local respondedPlayers = {}  -- Track who we've already responded to (per sessio
 local notifiedBlocks = {}  -- Track who we've already notified the user about blocking
 local playerName = nil  -- Store player name globally
 
--- Default filter patterns (you can customize these)
-local defaultPatterns = {
-    "buy.*gold",
-    "cheap.*gold",
-    "www%.",
-    "http",
-    "%.     com",
-    "%.   net",
-    "%.  org",
-    -- Boost spam patterns - made more specific to reduce false positives
-    "zg boost",
-    "zul'gurub boost",
-    "leveling zul gurub",
-    "sm boost",
-    "strat boost",
-    "mara boost",
-    "stocks boost",
-    "stockade boost",
-    "brd boost",
-    "dm boost",
-    "dire maul boost",
-    "selling.*boost",
+-- Boost spam detection patterns - much more specific
+-- These patterns look for combinations that indicate advertising/selling
+local boostSpamPatterns = {
+    -- Direct boost selling
     "wts.*boost",
-    "you want.*boost",
-    "need.*boost%?",
-    "interested.*boost",
-    "cheap.*boost",
-    "fast.*boost",
-    "leveling service",
-    "powerleveling",
-    "power leveling",
-    "carry service",
-    "boost.*gold",
-    "boost.*cheap",
-    "zul`gurub.*boost"
+    "selling.*boost",
+    "sell.*boost",
+    "boost.*service",
+    
+    -- Specific dungeon boosts with common advertising phrases
+    "zg.*boost.*cheap",
+    "zg.*boost.*fast",
+    "zg.*boost.*gold",
+    "zg.*boost.*pst",
+    "zg.*boost.*whisper",
+    "mara.*boost.*cheap",
+    "mara.*boost.*fast",
+    "mara.*boost.*gold",
+    "mara.*boost.*pst",
+    "sm.*boost.*cheap",
+    "sm.*boost.*fast",
+    "sm.*boost.*gold",
+    "sm.*boost.*pst",
+    "strat.*boost.*cheap",
+    "strat.*boost.*fast",
+    "strat.*boost.*gold",
+    "strat.*boost.*pst",
+    
+    -- Common boost spam openers
+    "hi sir.*boost",
+    "hello sir.*boost",
+    "hey sir.*boost",
+    "sir.*you want.*boost",
+    "you want.*boost%? ",
+    "need.*boost%?.*cheap",
+    "need.*boost%?.*fast",
+    "interested.*in.*boost%?",
+    
+    -- Leveling services
+    "leveling.*service",
+    "powerleveling.*service",
+    "power.*leveling.*service",
+    "boosting.*service",
+    "carry.*service",
+    "leveling.*cheap",
+    "leveling.*fast",
+    "leveling.*gold",
+    
+    -- Price-related boost spam
+    "boost.*[0-9]+.*gold",
+    "boost.*[0-9]+.*g",
+    "boost.*cheap.*gold",
+    "cheap.*boost.*gold",
+    
+    -- Specific dungeon names with service indicators
+    "zg.*leveling.*service",
+    "zul'? gurub.*leveling",
+    "mara.*leveling.*service",
+    "stockade.*leveling",
+    "stocks.*leveling",
+    "leveling.*service",
 }
 
+-- Gold seller patterns
+local goldSellerPatterns = {
+    "buy.*gold",
+    "cheap.*gold.*www",
+    "cheap.*gold.*%. com",
+    "sell.*gold.*www",
+    "gold.*www%.",
+    "gold.*%. com",
+    "gold.*%.net",
+    "www%. .*gold",
+}
+
+
 -- Auto-response message for boost spam whispers
-local AUTO_RESPONSE = "Sorry, this player does not utilize boosting services.     You have been added to a block list and can no longer message this player."
+local AUTO_RESPONSE = "Sorry, this player does not utilize boosting services.  You have been added to a block list and can no longer message this player."
 
 -- Channel type names for display
 local channelTypeNames = {
@@ -65,14 +104,56 @@ local function InitializeFilters()
     -- Store player name globally
     playerName = UnitName("player")
     
-    -- Load default patterns
-    for _, pattern in ipairs(defaultPatterns) do
-        table.insert(filterPatterns, pattern:    lower())
-    end
-    
-    print("|cFF00FF00" .. addonName .. "|r: Chat filter loaded.     Type /chatfilter for commands.")
+    print("|cFF00FF00" .. addonName .. "|r: Chat filter loaded.  Type /chatfilter for commands.")
     print("|cFFFFAA00" .. addonName .. "|r: Block list is temporary (resets each session).")
     print("|cFF00FF00" .. addonName .. "|r: You (" .. playerName .. ") are protected from being filtered.")
+end
+
+-- Advanced spam detection - checks if message is actually boost advertising
+local function IsBoostSpam(message)
+    local lowerMessage = message:lower()
+    
+    -- Check boost spam patterns
+    for _, pattern in ipairs(boostSpamPatterns) do
+        if lowerMessage:find(pattern) then
+            return true
+        end
+    end
+    
+    -- Check for custom added patterns
+    for _, pattern in ipairs(filterPatterns) do
+        if lowerMessage:find(pattern) then
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- Check for gold selling spam
+local function IsGoldSellerSpam(message)
+    local lowerMessage = message:lower()
+    
+    for _, pattern in ipairs(goldSellerPatterns) do
+        if lowerMessage:find(pattern) then
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- Check for generic spam (URLs, etc)
+local function IsGenericSpam(message)
+    local lowerMessage = message:lower()
+    
+    for _, pattern in ipairs(genericSpamPatterns) do
+        if lowerMessage:find(pattern) then
+            return true
+        end
+    end
+    
+    return false
 end
 
 -- Check if a message should be filtered
@@ -93,18 +174,22 @@ local function ShouldFilterMessage(message, sender)
         return false
     end
     
-    local lowerMessage = message:lower()
-    
-    -- Check if player is blocked
+    -- Check if player is already blocked
     if blockedPlayers[sender] then
         return true
     end
     
-    -- Check against filter patterns
-    for _, pattern in ipairs(filterPatterns) do
-        if lowerMessage:find(pattern) then
-            return true
-        end
+    -- Run spam detection checks
+    if IsBoostSpam(message) then
+        return true
+    end
+    
+    if IsGoldSellerSpam(message) then
+        return true
+    end
+    
+    if IsGenericSpam(message) then
+        return true
     end
     
     return false
@@ -123,7 +208,7 @@ local function SafeBlockPlayer(sender, channelName, message, isWhisper)
     end
     
     if sender == UnitName("player") then
-        print("|cFFFF0000[ChatFilter]|r ERROR:  Attempted to block yourself! Protection prevented this.")
+        print("|cFFFF0000[ChatFilter]|r ERROR: Attempted to block yourself!  Protection prevented this.")
         return false
     end
     
@@ -192,7 +277,7 @@ local function ChatFilter(self, event, message, sender, ...)
         
         -- For channel messages, try to get the actual channel name
         if event == "CHAT_MSG_CHANNEL" then
-            local _, _, _, channelNameFromEvent = ...     
+            local _, _, _, channelNameFromEvent = ... 
             if channelNameFromEvent and channelNameFromEvent ~= "" then
                 channelName = channelNameFromEvent
             end
@@ -222,7 +307,7 @@ local function RegisterFilters()
     ChatFrame_AddMessageEventFilter("CHAT_MSG_GUILD", ChatFilter)
     ChatFrame_AddMessageEventFilter("CHAT_MSG_OFFICER", ChatFilter)
     
-    print("|cFF00FF00" .. addonName .. "|r:     Filtering General, Trade, LFG, and all other channels.")
+    print("|cFF00FF00" .. addonName .. "|r:  Filtering General, Trade, LFG, and all other channels.")
 end
 
 -- Get a sorted list of blocked players for consistent numbering
@@ -240,26 +325,32 @@ SLASH_CHATFILTER1 = "/chatfilter"
 SLASH_CHATFILTER2 = "/cf"
 SlashCmdList["CHATFILTER"] = function(msg)
     local command, arg = msg:match("^(%S*)%s*(.-)$")
-    command = command:lower()
+    command = command: lower()
     
     if command == "add" and arg ~= "" then
-        table.insert(filterPatterns, arg:    lower())
-        print("|cFF00FF00" ..   addonName .. "|r: Added filter pattern: " .. arg)
+        table.insert(filterPatterns, arg: lower())
+        print("|cFF00FF00" .. addonName .. "|r: Added filter pattern: " .. arg)
     
     elseif command == "remove" and arg ~= "" then
         for i, pattern in ipairs(filterPatterns) do
-            if pattern == arg:    lower() then
-                table. remove(filterPatterns, i)
-                print("|cFF00FF00" ..  addonName .. "|r: Removed filter pattern:     " .. arg)
+            if pattern == arg: lower() then
+                table.remove(filterPatterns, i)
+                print("|cFF00FF00" .. addonName .. "|r: Removed filter pattern: " .. arg)
                 return
             end
         end
-        print("|cFFFF0000" ..  addonName .. "|r: Pattern not found:     " .. arg)
+        print("|cFFFF0000" .. addonName ..  "|r: Pattern not found:  " .. arg)
     
     elseif command == "list" then
-        print("|cFF00FF00" ..  addonName ..    "|r: Current filter patterns:")
-        for i, pattern in ipairs(filterPatterns) do
+        print("|cFF00FF00" .. addonName .. "|r: Active boost spam patterns:")
+        for i, pattern in ipairs(boostSpamPatterns) do
             print(i .. ".  " .. pattern)
+        end
+        if #filterPatterns > 0 then
+            print("|cFF00FF00" .. addonName .. "|r: Custom filter patterns:")
+            for i, pattern in ipairs(filterPatterns) do
+                print(i .. ". " .. pattern)
+            end
         end
     
     elseif command == "block" and arg ~= "" then
@@ -269,18 +360,18 @@ SlashCmdList["CHATFILTER"] = function(msg)
         
         -- Prevent blocking yourself
         if arg == playerName or arg == UnitName("player") then
-            print("|cFFFF0000" ..    addonName .. "|r: You cannot block yourself!")
+            print("|cFFFF0000" .. addonName .. "|r:  You cannot block yourself!")
             return
         end
         
         if blockedPlayers[arg] then
-            print("|cFFFFAA00" ..  addonName .. "|r: Player is already blocked:     " .. arg)
+            print("|cFFFFAA00" .. addonName .. "|r: Player is already blocked:  " .. arg)
             return
         end
         
         blockedPlayers[arg] = true
         notifiedBlocks[arg] = true
-        print("|cFF00FF00" ..  addonName .. "|r: Blocked player (this session): " .. arg)
+        print("|cFF00FF00" .. addonName .. "|r: Blocked player (this session): " .. arg)
     
     elseif command == "unblock" and arg ~= "" then
         local playerNumber = tonumber(arg)
@@ -292,18 +383,18 @@ SlashCmdList["CHATFILTER"] = function(msg)
                 local playerToUnblock = sortedList[playerNumber]
                 blockedPlayers[playerToUnblock] = nil
                 notifiedBlocks[playerToUnblock] = nil
-                print("|cFF00FF00" .. addonName .. "|r: Unblocked player:  " .. playerToUnblock)
+                print("|cFF00FF00" .. addonName .. "|r: Unblocked player: " .. playerToUnblock)
             else
-                print("|cFFFF0000" ..  addonName ..     "|r: Invalid number.    Use /cf blocked to see the list.")
+                print("|cFFFF0000" .. addonName ..  "|r: Invalid number. Use /cf blocked to see the list.")
             end
         else
             -- Unblock by name (fallback)
             if blockedPlayers[arg] then
                 blockedPlayers[arg] = nil
                 notifiedBlocks[arg] = nil
-                print("|cFF00FF00" .. addonName .. "|r: Unblocked player:   " .. arg)
+                print("|cFF00FF00" .. addonName .. "|r: Unblocked player: " .. arg)
             else
-                print("|cFFFF0000" ..   addonName .. "|r: Player not found in block list:   " .. arg)
+                print("|cFFFF0000" ..  addonName .. "|r: Player not found in block list:  " .. arg)
             end
         end
     
@@ -311,7 +402,7 @@ SlashCmdList["CHATFILTER"] = function(msg)
         local sortedList = GetSortedBlockedPlayers()
         print("|cFF00FF00" .. addonName .. "|r: Blocked players (this session):")
         for i, player in ipairs(sortedList) do
-            print(i .. ".   " .. player)
+            print(i .. ". " .. player)
         end
         if #sortedList == 0 then
             print("No players currently blocked.")
@@ -321,7 +412,7 @@ SlashCmdList["CHATFILTER"] = function(msg)
     
     elseif command == "clear" then
         filterPatterns = {}
-        print("|cFF00FF00" .. addonName .. "|r: All filter patterns cleared.")
+        print("|cFF00FF00" .. addonName .. "|r: All custom filter patterns cleared.")
     
     elseif command == "clearblocked" then
         blockedPlayers = {}
@@ -329,14 +420,14 @@ SlashCmdList["CHATFILTER"] = function(msg)
         print("|cFF00FF00" .. addonName .. "|r: All blocked players cleared.")
     
     else
-        print("|cFF00FF00" ..     addonName .. "|r: Available commands:")
-        print("/chatfilter add <pattern> - Add a filter pattern")
-        print("/chatfilter remove <pattern> - Remove a filter pattern")
+        print("|cFF00FF00" .. addonName .. "|r: Available commands:")
+        print("/chatfilter add <pattern> - Add a custom filter pattern")
+        print("/chatfilter remove <pattern> - Remove a custom filter pattern")
         print("/chatfilter list - List all filter patterns")
         print("/chatfilter block <player> - Block a player (this session only)")
         print("/chatfilter unblock <number> - Unblock a player by list number")
         print("/chatfilter blocked - List all blocked players")
-        print("/chatfilter clear - Clear all filter patterns")
+        print("/chatfilter clear - Clear custom filter patterns")
         print("/chatfilter clearblocked - Clear all blocked players")
     end
 end
